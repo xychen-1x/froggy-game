@@ -113,6 +113,7 @@
       <button id="rainBtn">🌧 Rain</button>
       <button id="soundBtn">🔊 Sound</button>
       <button id="skinBtn">🎨 Buy Golden Frog - 5 🪙</button>
+      <button id="frogBtn">🐸  Switch Other Froggy</button>
     </div>
 
     <div class="hint">First to 7 points wins • Flowers grow when you score</div>
@@ -127,12 +128,14 @@
     const rainBtn = document.querySelector("#rainBtn");
     const soundBtn = document.querySelector("#soundBtn");
     const skinBtn = document.querySelector("#skinBtn");
+    const frogBtn = document.querySelector("#(frogBtn");
 
     let W, H, dpr;
     let running = false;
     let gameOver = false;
     let rain = true;
     let soundOn = true;
+    let frogswitch = true;
     let goldenFrog = false;
     let coins = 0;
     let cameraShake = 0;
