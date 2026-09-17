@@ -1,0 +1,534 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Froggy Pond Rally</title>
+  <style>
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      overflow: hidden;
+      background: #102b36;
+      color: white;
+      font-family: system-ui, sans-serif;
+    }
+
+    #gameWrap {
+      position: relative;
+      width: min(1100px, 96vw);
+      aspect-ratio: 16 / 9;
+      border: 4px solid #88d498;
+      border-radius: 18px;
+      overflow: hidden;
+      box-shadow: 0 0 40px #0008;
+      background: #174b4f;
+    }
+
+    canvas {
+      width: 100%;
+      height: 100%;
+      display: block;
+      cursor: none;
+    }
+
+    #hud {
+      position: absolute;
+      inset: 12px 18px auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      pointer-events: none;
+      text-shadow: 2px 2px #1238;
+      font-weight: bold;
+    }
+
+    #score {
+      font-size: clamp(28px, 5vw, 58px);
+    }
+
+    #message {
+      position: absolute;
+      inset: 50% auto auto 50%;
+      transform: translate(-50%, -50%);
+      padding: 18px 28px;
+      border-radius: 14px;
+      background: #082f35cc;
+      text-align: center;
+      font-size: 20px;
+      pointer-events: none;
+    }
+
+    #shop {
+      position: absolute;
+      right: 16px;
+      bottom: 14px;
+      display: flex;
+      gap: 7px;
+      flex-wrap: wrap;
+      justify-content: end;
+    }
+
+    button {
+      border: 0;
+      border-radius: 9px;
+      padding: 8px 11px;
+      color: white;
+      background: #276678;
+      cursor: pointer;
+      font-weight: bold;
+    }
+
+    button:hover { background: #3e8e9e; }
+    button:disabled { opacity: .45; cursor: not-allowed; }
+
+    .hint {
+      position: absolute;
+      left: 16px;
+      bottom: 16px;
+      opacity: .8;
+      font-size: 12px;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameWrap">
+    <canvas id="game"></canvas>
+
+    <div id="hud">
+      <div id="score">0 : 0</div>
+      <div>🪙 <span id="coins">0</span></div>
+    </div>
+
+    <div id="message">
+      🐸 Froggy Pond Rally<br>
+      <small>Move with mouse or ↑ ↓ — click or press Space to start</small>
+    </div>
+
+    <div id="shop">
+      <button id="rainBtn">🌧 Rain</button>
+      <button id="soundBtn">🔊 Sound</button>
+      <button id="skinBtn">🎨 Buy Golden Frog - 5 🪙</button>
+    </div>
+
+    <div class="hint">First to 7 points wins • Flowers grow when you score</div>
+  </div>
+
+  <script>
+    const canvas = document.querySelector("#game");
+    const ctx = canvas.getContext("2d");
+    const scoreText = document.querySelector("#score");
+    const coinsText = document.querySelector("#coins");
+    const message = document.querySelector("#message");
+    const rainBtn = document.querySelector("#rainBtn");
+    const soundBtn = document.querySelector("#soundBtn");
+    const skinBtn = document.querySelector("#skinBtn");
+
+    let W, H, dpr;
+    let running = false;
+    let gameOver = false;
+    let rain = true;
+    let soundOn = true;
+    let goldenFrog = false;
+    let coins = 0;
+    let cameraShake = 0;
+    let lastTime = 0;
+    let flowerGrowth = 0;
+
+    const keys = {};
+    const mouse = { y: 0, active: false };
+
+    const player = { x: 48, y: 0, w: 18, h: 115, speed: 560 };
+    const computer = { x: 0, y: 0, w: 18, h: 115, speed: 370 };
+
+    const ball = {
+      x: 0, y: 0, r: 17, vx: 430, vy: 160, rotation: 0
+    };
+
+    const state = { playerScore: 0, computerScore: 0 };
+
+    const drops = Array.from({ length: 150 }, () => ({
+      x: Math.random(), y: Math.random(), speed: .35 + Math.random() * .8
+    }));
+
+    const flowers = Array.from({ length: 16 }, (_, i) => ({
+      x: .06 + i * .06,
+      size: 12 + Math.random() * 14,
+      phase: Math.random() * Math.PI * 2
+    }));
+
+    function resize() {
+      const rect = canvas.getBoundingClientRect();
+      dpr = Math.min(devicePixelRatio || 1, 2);
+      W = rect.width;
+      H = rect.height;
+      canvas.width = W * dpr;
+      canvas.height = H * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      player.y = H / 2 - player.h / 2;
+      computer.x = W - 66;
+      computer.y = H / 2 - computer.h / 2;
+
+      if (!running) resetBall(Math.random() > .5 ? 1 : -1);
+    }
+
+    function resetBall(direction = 1) {
+      ball.x = W / 2;
+      ball.y = H / 2;
+      ball.vx = direction * 430;
+      ball.vy = (Math.random() - .5) * 300;
+      ball.rotation = 0;
+    }
+
+    function startGame() {
+      if (gameOver) {
+        state.playerScore = 0;
+        state.computerScore = 0;
+        flowerGrowth = 0;
+        gameOver = false;
+        updateScore();
+      }
+
+      running = true;
+      message.style.display = "none";
+      playSound(440, .06);
+    }
+
+    function updateScore() {
+      scoreText.textContent = `${state.playerScore} : ${state.computerScore}`;
+      coinsText.textContent = coins;
+    }
+
+    function movePlayer(dt) {
+      if (mouse.active) {
+        player.y += (mouse.y - player.y - player.h / 2) * Math.min(1, dt * 12);
+      }
+
+      if (keys.ArrowUp || keys.w) player.y -= player.speed * dt;
+      if (keys.ArrowDown || keys.s) player.y += player.speed * dt;
+
+      player.y = Math.max(18, Math.min(H - player.h - 18, player.y));
+    }
+
+    function updateComputer(dt) {
+      const target = ball.y - computer.h / 2;
+      const difference = target - computer.y;
+      computer.y += Math.sign(difference) *
+        Math.min(Math.abs(difference), computer.speed * dt);
+
+      computer.y = Math.max(18, Math.min(H - computer.h - 18, computer.y));
+    }
+
+    function collision(p) {
+      return ball.x - ball.r < p.x + p.w &&
+             ball.x + ball.r > p.x &&
+             ball.y - ball.r < p.y + p.h &&
+             ball.y + ball.r > p.y;
+    }
+
+    function update(dt) {
+      movePlayer(dt);
+      updateComputer(dt);
+
+      if (!running) return;
+
+      ball.x += ball.vx * dt;
+      ball.y += ball.vy * dt;
+      ball.rotation += dt * 8;
+
+      if (ball.y - ball.r < 12 || ball.y + ball.r > H - 12) {
+        ball.vy *= -1;
+        ball.y = Math.max(ball.r + 12, Math.min(H - ball.r - 12, ball.y));
+        playSound(250, .035);
+      }
+
+      for (const paddle of [player, computer]) {
+        if (collision(paddle)) {
+          const relative = (ball.y - (paddle.y + paddle.h / 2)) / (paddle.h / 2);
+          const direction = paddle === player ? 1 : -1;
+          ball.vx = direction * Math.min(Math.abs(ball.vx) * 1.06, 850);
+          ball.vy = relative * 460;
+          ball.x = paddle === player
+            ? paddle.x + paddle.w + ball.r
+            : paddle.x - ball.r;
+
+          cameraShake = 5;
+          playSound(620, .07);
+        }
+      }
+
+      if (ball.x < -40) {
+        state.computerScore++;
+        coins = Math.max(0, coins - 1);
+        flowerGrowth = Math.max(0, flowerGrowth - .1);
+        updateScore();
+        resetBall(1);
+        playSound(120, .15);
+      }
+
+      if (ball.x > W + 40) {
+        state.playerScore++;
+        coins++;
+        flowerGrowth = Math.min(1, flowerGrowth + .18);
+        updateScore();
+        resetBall(-1);
+        playSound(800, .13);
+      }
+
+      if (state.playerScore >= 7 || state.computerScore >= 7) {
+        running = false;
+        gameOver = true;
+        message.innerHTML =
+          state.playerScore >= 7
+            ? "🏆 You saved the pond!<br><small>Click or press Space to play again</small>"
+            : "🌧 The pond needs more practice!<br><small>Click or press Space to try again</small>";
+        message.style.display = "block";
+      }
+    }
+
+    function drawBackground(time) {
+      const sky = ctx.createLinearGradient(0, 0, 0, H);
+      sky.addColorStop(0, rain ? "#304f68" : "#75c9dd");
+      sky.addColorStop(1, rain ? "#173f49" : "#258b76");
+      ctx.fillStyle = sky;
+      ctx.fillRect(0, 0, W, H);
+
+      // Distant hills
+      ctx.fillStyle = rain ? "#234b52" : "#3c9b70";
+      ctx.beginPath();
+      ctx.moveTo(0, H * .55);
+      for (let x = 0; x <= W; x += 70) {
+        ctx.quadraticCurveTo(x + 35, H * (.38 + Math.sin(x) * .03), x + 70, H * .55);
+      }
+      ctx.lineTo(W, H);
+      ctx.lineTo(0, H);
+      ctx.fill();
+
+      // Water
+      ctx.fillStyle = "#197786";
+      ctx.fillRect(0, H * .56, W, H * .44);
+
+      ctx.strokeStyle = "#ffffff22";
+      for (let y = H * .62; y < H; y += 27) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.quadraticCurveTo(W * .5, y - 8, W, y);
+        ctx.stroke();
+      }
+
+      // Growing flowers on the bank
+      for (const flower of flowers) {
+        const growth = Math.min(1, flowerGrowth * 2 + .08);
+        const x = flower.x * W;
+        const base = H * .58;
+        const sway = Math.sin(time * .002 + flower.phase) * 4;
+
+        ctx.strokeStyle = "#287349";
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.moveTo(x, base);
+        ctx.lineTo(x + sway, base - flower.size * growth * 2.2);
+        ctx.stroke();
+
+        ctx.fillStyle = flower.x % .12 > .06 ? "#ffd166" : "#ff6f91";
+        ctx.beginPath();
+        ctx.arc(x + sway, base - flower.size * growth * 2.2,
+          flower.size * growth * .32, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    function drawLily() {
+      const x = W / 2;
+      const y = H * .72;
+
+      ctx.fillStyle = "#75bd54";
+      ctx.beginPath();
+      ctx.ellipse(x, y, 92, 32, -.1, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#197786";
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + 82, y - 25);
+      ctx.lineTo(x + 86, y + 15);
+      ctx.closePath();
+      ctx.fill();
+
+      // Frog
+      const bounce = Math.sin(performance.now() * .006) * 3;
+      ctx.save();
+      ctx.translate(x, y - 25 + bounce);
+
+      ctx.fillStyle = goldenFrog ? "#ffd166" : "#8ed16b";
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 42, 29, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = goldenFrog ? "#fff0a8" : "#b8ed91";
+      ctx.beginPath();
+      ctx.arc(-22, -23, 14, 0, Math.PI * 2);
+      ctx.arc(22, -23, 14, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#172d35";
+      ctx.beginPath();
+      ctx.arc(-22, -25, 5, 0, Math.PI * 2);
+      ctx.arc(22, -25, 5, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = "#315d38";
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.arc(0, 4, 16, 0, Math.PI);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function drawPaddle(paddle, isPlayer) {
+      ctx.fillStyle = isPlayer ? "#d9f99d" : "#ffb4a2";
+      ctx.roundRect(paddle.x, paddle.y, paddle.w, paddle.h, 9);
+      ctx.fill();
+
+      ctx.font = "25px serif";
+      ctx.textAlign = "center";
+      ctx.fillText(isPlayer ? "🐸" : "🦆",
+        paddle.x + paddle.w / 2, paddle.y + paddle.h / 2 + 9);
+    }
+
+    function drawBall() {
+      ctx.save();
+      ctx.translate(ball.x, ball.y);
+      ctx.rotate(ball.rotation);
+
+      ctx.fillStyle = "#f5d76e";
+      ctx.beginPath();
+      ctx.arc(0, 0, ball.r, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#4f9d69";
+      ctx.beginPath();
+      ctx.arc(-5, -7, 4, 0, Math.PI * 2);
+      ctx.arc(7, 5, 3, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    function drawRain(time) {
+      if (!rain) return;
+
+      ctx.strokeStyle = "#bcecff88";
+      ctx.lineWidth = 1.5;
+
+      for (const drop of drops) {
+        const x = drop.x * W;
+        const y = ((drop.y * H + time * drop.speed * .45) % (H + 30)) - 30;
+
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x - 7, y + 18);
+        ctx.stroke();
+      }
+    }
+
+    function draw(time) {
+      ctx.save();
+
+      if (cameraShake > 0) {
+        ctx.translate(
+          (Math.random() - .5) * cameraShake,
+          (Math.random() - .5) * cameraShake
+        );
+        cameraShake *= .88;
+      }
+
+      drawBackground(time);
+      drawLily();
+      drawPaddle(player, true);
+      drawPaddle(computer, false);
+      drawBall();
+      drawRain(time);
+
+      ctx.restore();
+    }
+
+    function loop(time = 0) {
+      const dt = Math.min((time - lastTime) / 1000, .035) || 0;
+      lastTime = time;
+      update(dt);
+      draw(time);
+      requestAnimationFrame(loop);
+    }
+
+    let audioContext;
+
+    function playSound(frequency, duration) {
+      if (!soundOn) return;
+
+      audioContext ||= new AudioContext();
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+
+      oscillator.frequency.value = frequency;
+      oscillator.type = "sine";
+      gain.gain.setValueAtTime(.04, audioContext.currentTime);
+      gain.gain.exponentialRampToValueAtTime(
+        .001, audioContext.currentTime + duration
+      );
+
+      oscillator.connect(gain);
+      gain.connect(audioContext.destination);
+      oscillator.start();
+      oscillator.stop(audioContext.currentTime + duration);
+    }
+
+    canvas.addEventListener("mousemove", event => {
+      const rect = canvas.getBoundingClientRect();
+      mouse.y = event.clientY - rect.top;
+      mouse.active = true;
+    });
+
+    canvas.addEventListener("click", startGame);
+
+    window.addEventListener("keydown", event => {
+      keys[event.key] = true;
+      if (event.code === "Space") startGame();
+    });
+
+    window.addEventListener("keyup", event => {
+      keys[event.key] = false;
+    });
+
+    rainBtn.addEventListener("click", () => {
+      rain = !rain;
+      rainBtn.textContent = rain ? "🌧 Rain" : "☀️ Clear Weather";
+    });
+
+    soundBtn.addEventListener("click", () => {
+      soundOn = !soundOn;
+      soundBtn.textContent = soundOn ? "🔊 Sound" : "🔇 Sound";
+    });
+
+    skinBtn.addEventListener("click", () => {
+      if (!goldenFrog && coins >= 5) {
+        coins -= 5;
+        goldenFrog = true;
+        skinBtn.textContent = "✨ Golden Frog Equipped";
+        skinBtn.disabled = true;
+        updateScore();
+        playSound(1000, .15);
+      }
+    });
+
+    window.addEventListener("resize", resize);
+    resize();
+    updateScore();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
