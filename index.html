@@ -113,7 +113,7 @@
       <button id="rainBtn">🌧 Rain</button>
       <button id="soundBtn">🔊 Sound</button>
       <button id="skinBtn">🎨 Buy Golden Frog - 5 🪙</button>
-      <button id="frogBtn">🐸  Switch Other Froggy</button>
+      <button id="frogBtn">🐸 Switch Other Froggy</button>
     </div>
 
     <div class="hint">First to 7 points wins • Flowers grow when you score</div>
@@ -128,7 +128,7 @@
     const rainBtn = document.querySelector("#rainBtn");
     const soundBtn = document.querySelector("#soundBtn");
     const skinBtn = document.querySelector("#skinBtn");
-    const frogBtn = document.querySelector("#(frogBtn");
+    const frogBtn = document.querySelector("#frogBtn");
 
     let W, H, dpr;
     let running = false;
@@ -365,15 +365,17 @@
 
       // Frog
       const bounce = Math.sin(performance.now() * .006) * 3;
+      const frogBody = goldenFrog ? "#ffd166" : frogswitch ? "#7acb93" : "#8ed16b";
+      const frogBelly = goldenFrog ? "#fff0a8" : frogswitch ? "#d9f5d2" : "#b8ed91";
       ctx.save();
       ctx.translate(x, y - 25 + bounce);
 
-      ctx.fillStyle = goldenFrog ? "#ffd166" : "#8ed16b";
+      ctx.fillStyle = frogBody;
       ctx.beginPath();
       ctx.ellipse(0, 0, 42, 29, 0, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.fillStyle = goldenFrog ? "#fff0a8" : "#b8ed91";
+      ctx.fillStyle = frogBelly;
       ctx.beginPath();
       ctx.arc(-22, -23, 14, 0, Math.PI * 2);
       ctx.arc(22, -23, 14, 0, Math.PI * 2);
@@ -384,6 +386,14 @@
       ctx.arc(-22, -25, 5, 0, Math.PI * 2);
       ctx.arc(22, -25, 5, 0, Math.PI * 2);
       ctx.fill();
+
+      if (frogswitch && !goldenFrog) {
+        ctx.fillStyle = "#2f6e4d";
+        ctx.beginPath();
+        ctx.arc(-10, 6, 5, 0, Math.PI * 2);
+        ctx.arc(10, 6, 5, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       ctx.strokeStyle = "#315d38";
       ctx.lineWidth = 3;
@@ -528,10 +538,15 @@
       }
     });
 
+    frogBtn.addEventListener("click", () => {
+      frogswitch = !frogswitch;
+      frogBtn.textContent = frogswitch ? "🐸 Switch Other Froggy" : "🐸 Switch Main Froggy";
+    });
+
     window.addEventListener("resize", resize);
     resize();
     updateScore();
     requestAnimationFrame(loop);
   </script>
 </body>
-  </html>
+</html>
